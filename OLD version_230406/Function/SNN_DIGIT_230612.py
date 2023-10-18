@@ -1,0 +1,157 @@
+# Author: Jaehun Kim
+# Email: rlawogns1204@unist.ac.kr
+# Affiliation: UNIST BME BCILAB
+# Date: 2023-05-19
+
+import torch
+import torch.nn as nn
+import numpy as np
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
+import cv2
+import time
+
+class SNNModel(nn.Module):
+    def __init__(self, layers, synapses, rf_sizes, device='cpu'):
+        self.SA_layers = layers[0]
+        self.RA_layers = layers[1]
+        self.CN_layers = layers[2]
+
+        self.SA_synapses = synapses[0]
+        self.RA_synapses = synapses[1]
+        self.CN_synapses = synapses[2]
+
+        self.device = device
+        self.rf_sizes = rf_sizes
+        self.reset_model()
+
+    def reset_model(self):
+        for layer_set, synapse_set in zip([self.SA_layers, self.RA_layers, self.CN_layers], [self.SA_synapses, self.RA_synapses, self.CN_synapses]):
+            for layer, synapse in zip(layer_set, synapse_set):
+                layer.reset()
+                synapse.reset()
+
+    def set_initial_sensor_settings(self,sensor):
+        desired_width = 320
+        desired_height = 240
+        sensor.set(cv2.CAP_PROP_FRAME_WIDTH, desired_width)
+        sensor.set(cv2.CAP_PROP_FRAME_HEIGHT, desired_height)
+
+        sensor.set(cv2.CAP_PROP_FPS, 60)
+        fps = sensor.get(cv2.CAP_PROP_FPS)
+        print(f"FPS: {fps}")
+
+    def get_sensor_input(self,sensor, plot_image  = True):
+        ret, frame = sensor.read() 
+
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        flipped_frame = cv2.flip(gray_frame, 0)
+        rotated_frame = cv2.rotate(flipped_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        resized_frame = cv2.resize(rotated_frame, (48, 64))
+
+        if plot_image == True:
+            cv2.imshow('frame', resized_frame)
+
+        return resized_frame
+
+    def feedforward(self):
+        print('start feedforward')
+
+        cap = cv2.VideoCapture(0)
+        print('Tactile sensor is open.')
+        self.set_initial_sensor_settings(cap)
+
+        self.process_stim(cap, self.SA_layers, self.SA_synapses, self.RA_layers, self.RA_synapses, self.CN_layers, self.CN_synapses)
+        # [self.SA_spike_times, self.RA_spike_times, self.CN_spike_times] = self.process_stim(
+        #     SA_stim, self.SA_layers, self.SA_synapses,
+        #     RA_stim, self.RA_layers, self.RA_synapses,
+        #     self.CN_layers, self.CN_synapses
+        # )
+
+        cap.release() 
+        cv2.destroyAllWindows()
+        print('Tactile sensor is closed.')
+
+    def process_stim(self, cap, SA_Layers, SA_synapses, RA_layers, RA_synapses, CN_layers, CN_synapses):
+        print('procesing start')
+        
+        startT = time.time()
+        frame = self.get_sensor_input(cap, plot_image = True)
+        endT = time.time()
+
+        print(endT - startT)
+        print('processing end')
+
+
+    def process_stim_oldversion(self,
+                     SA_layers, SA_synapses,
+                     RA_layers, RA_synapses,
+                     CN_layers, CN_synapses):
+
+        stim_len = SA_stim.shape[2]
+        SA_spike_times = [torch.zeros(
+            (synapse.weights.shape[0], stim_len - 1), device=self.device) for synapse in SA_synapses]
+        RA_spike_times = [torch.zeros(
+            (synapse.weights.shape[0], stim_len - 1), device=self.device) for synapse in RA_synapses]
+        CN_spike_times = [torch.zeros(
+            (synapse.weights.shape[0], stim_len - 1), device=self.device) for synapse in CN_synapses]
+        
+        psp_sa = []
+        psp_ra = []
+
+        for i in range(1, stim_len):
+            ##############################################################
+            # SA updates
+            SA_layers[0].update(SA_synapses[0].cal_post_input(SA_stim[:, :, i].reshape(-1)))
+            SA_layers[1].update(SA_synapses[1].cal_post_input_delay(SA_layers[0].spike_buffer))
+
+            SA_rf_input_PN1 = SA_synapses[2].cal_post_input_delay(SA_layers[0].spike_buffer)
+            SA_rf_input_PN2 = SA_synapses[3].cal_post_input_delay(SA_layers[1].spike_buffer)
+
+            SA_layers[2].update(SA_rf_input_PN1 * 2  - SA_rf_input_PN2 * 1)
+
+            ##############################################################
+
+            ##############################################################
+            # RA updates
+            RA_layers[0].update(RA_synapses[0].cal_post_input(RA_stim[:, :, i].reshape(-1)))
+            RA_layers[1].update(RA_synapses[1].cal_post_input_delay(RA_layers[0].spike_buffer))
+
+            RA_rf_input_PN1 = RA_synapses[2].cal_post_input_delay(RA_layers[0].spike_buffer)
+            RA_rf_input_PN2 = RA_synapses[3].cal_post_input_delay(RA_layers[1].spike_buffer)
+            RA_layers[2].update(RA_rf_input_PN1 * 2 - RA_rf_input_PN2 * 1)
+
+            ##############################################################
+
+            ##############################################################
+            # CN updates
+            CN_IN_SA_rf_input = CN_synapses[0].cal_post_input_delay(SA_layers[2].spike_buffer)
+            CN_IN_RA_rf_input = CN_synapses[2].cal_post_input_delay(RA_layers[2].spike_buffer)
+
+            CN_layers[0].update( CN_IN_SA_rf_input * 1 + CN_IN_RA_rf_input * 1)
+
+            CN_PN_SA_rf_input = CN_synapses[1].cal_post_input_delay(SA_layers[2].spike_buffer)
+            CN_PN_RA_rf_input = CN_synapses[3].cal_post_input_delay(RA_layers[2].spike_buffer)
+
+            psp_sa.append(CN_synapses[1].psp)
+            psp_ra.append(CN_synapses[3].psp)
+
+            CN_IN_rf_input = CN_synapses[4].cal_post_input_delay(CN_layers[0].spike_buffer)
+
+            input_value = CN_PN_SA_rf_input * 2 + CN_PN_RA_rf_input * 2 - CN_IN_rf_input * 1
+            CN_layers[1].update(input_value)
+
+            ##############################################################
+
+            SA_spike_times[0][:, i - 1] = SA_layers[0].spikes
+            SA_spike_times[1][:, i - 1] = SA_layers[1].spikes
+            SA_spike_times[2][:, i - 1] = SA_layers[2].spikes
+
+            RA_spike_times[0][:, i - 1] = RA_layers[0].spikes
+            RA_spike_times[1][:, i - 1] = RA_layers[1].spikes
+            RA_spike_times[2][:, i - 1] = RA_layers[2].spikes
+
+            CN_spike_times[0][:, i - 1] = CN_layers[0].spikes
+            CN_spike_times[1][:, i - 1] = CN_layers[1].spikes
+
+        return SA_spike_times, RA_spike_times, CN_spike_times
