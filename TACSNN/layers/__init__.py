@@ -1,0 +1,1 @@
+from .izhi_layer import IzhikevichLayer, Synapse
