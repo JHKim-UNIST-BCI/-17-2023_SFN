@@ -51,3 +51,35 @@ def generate_primary_receptive_field_weights(pixel_h=320, pixel_w=240, device='c
     )
     
     return sa_rf, ra_rf, sa_rf_dim, ra_rf_dim
+
+def generate_cuneate_nucleus_receptive_field_weights(self):
+    time_delay = 2
+
+    cn_pn_rf = [torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]],device=self.device) * 4]
+    cn_in_rf = [torch.tensor([[1, 1, 1], [1, 0, 1], [1, 1, 1]],device=self.device)]
+    cn_SD = [torch.full((3, 3), time_delay, device=self.device)]
+
+    cn_intopn_rf = []
+
+    # Check if the sizes of the inner tensors are different and print the index
+    for i, (pn,IN) in enumerate(zip(cn_pn_rf, cn_in_rf)):
+        if pn.size() != IN.size():
+            raise ValueError(
+                f"The inner tensors at index {i} have different sizes: {pn.size()} != {IN.size()}")
+        
+    self.sa_cn_pn_rf, [self.sa_cn_pn_step_height, self.sa_cn_pn_step_width] = self.generate_receptive_field(cn_pn_rf, pixel_h=self.sa_rf_height,pixel_w=self.sa_rf_width, step_size=1, device=self.device)
+    self.sa_cn_in_rf, [self.sa_cn_in_step_height, self.sa_cn_in_step_width] = self.generate_receptive_field(cn_in_rf, pixel_h=self.sa_rf_height,pixel_w=self.sa_rf_width, step_size=1, device=self.device)
+    self.sa_cn_SD, [self.sa_cn_SD_step_height, self.sa_cn_SD_step_width]  = self.generate_receptive_field(cn_SD, pixel_h=self.sa_rf_height,pixel_w=self.sa_rf_width, step_size=1, device=self.device)
+    self.ra_cn_pn_rf, [self.ra_cn_pn_step_height, self.ra_cn_pn_step_width] = self.generate_receptive_field(cn_pn_rf, pixel_h=self.ra_rf_height,pixel_w=self.ra_rf_width, step_size=1, device=self.device)
+    self.ra_cn_in_rf, [self.ra_cn_in_step_height, self.ra_cn_in_step_width] = self.generate_receptive_field(cn_in_rf, pixel_h=self.ra_rf_height,pixel_w=self.ra_rf_width, step_size=1, device=self.device)
+    self.ra_cn_SD, [self.ra_cn_SD_step_height, self.ra_cn_SD_step_width] = self.generate_receptive_field(cn_SD, pixel_h=self.ra_rf_height, pixel_w=self.ra_rf_width, step_size=1, device=self.device)
+
+    self.sa_intopn_rf, self.sa_intopn_DN = self.generate_neuron_connection_weight(len(self.sa_cn_in_rf), len(self.sa_cn_pn_rf), connection_probability=0.2, device=self.device)
+    self.ra_intopn_rf, self.ra_intopn_DN = self.generate_neuron_connection_weight(len(self.ra_cn_in_rf), len(self.ra_cn_pn_rf), connection_probability=0.2, device=self.device)
+
+    print("sa_cn_pn_rf shape: ", self.sa_cn_pn_rf.shape,"sa_cn_pn_step_height:", self.sa_cn_pn_step_height,"sa_cn_pn_step_width:", self.sa_cn_pn_step_width)
+    print("sa_cn_in_rf shape: ", self.sa_cn_in_rf.shape,"sa_cn_in_step_height:", self.sa_cn_in_step_height,"sa_cn_in_step_width:", self.sa_cn_in_step_width)
+    print("ra_cn_pn_rf shape: ", self.ra_cn_pn_rf.shape,"ra_cn_pn_step_height:", self.ra_cn_pn_step_height,"ra_cn_pn_step_width:", self.ra_cn_pn_step_width)
+    print("ra_cn_in_rf shape: ", self.ra_cn_in_rf.shape,"ra_cn_in_step_height:", self.ra_cn_in_step_height,"ra_cn_in_step_width:", self.ra_cn_in_step_width)
+    print("sa_intopn_rf shape: ", self.sa_intopn_rf.shape)
+    print("ra_intopn_rf shape: ", self.ra_intopn_rf.shape)
