@@ -1,1 +1,1 @@
-from .izhi_layer import IzhikevichLayer, Synapse
+from .layermodule import IzhikevichNeuron 
